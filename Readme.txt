@@ -1,0 +1,332 @@
+Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information.
+Dakusan’s Web Communication Framework (DWCF) - v1.0 http://www.castledragmire.com/Projects/DWCF
+
+A communication framework between the client and server sides of a website with an emphasis on security.
+
+This helps facilitate quick, clean, and secure asynchronous communication for a website via AJAX and JSON.
+The PHP and JS classes are independent and not required for each other. However, some of the functionality of each of the two classes complements the other.
+This class can use any unicode encoding, however, you must make sure the same encoding is used on both the client and the server
+
+Nomenclature notes:
+	Array means an array with incrementing numerical keys
+		Item means an item within an array
+	Object means an associative array that does not have just incrementing numerical keys
+		Member means an item within an object
+	Parameter means a passed variable to a function
+	Request variables are received by the server in the global $_REQUEST variable
+
+Example code is given in the last section
+
+---------------------------------Dependencies--------------------------------
+jQuery for the client module
+The server optionally uses DSQL (http://www.castledragmire.com/Projects/DSQL)
+
+------------------------------Client (JS) Class------------------------------
+This is all ran through the “DWCFRequest” class, which is a wrapper to initiate an AJAX request through jQuery
+DWCFRequest() function parameters:
+	1) Data [Required]:
+		The request variables to pass through to the server request
+		This is set directly to jQuery.ajax.data
+		This will also be stored in this.Data
+	2) CompleteFunc [Required]:
+		The callback function to call on completion
+		2 parameters are received to the callback function:
+			Data:
+				The data returned by the server (which was encoded in JSON)
+				Result Member:
+					The return must be an object with a “Result” member
+					If using the DWCF PHP module, the “Result” member will automatically be “Success”, when using CallByAction(), if an object is returned without this member. This helps facilitate easier error handling
+				If the below ErrorCode parameter is not ErrorCodes.Success, this may contain other data (See “Error Codes” section for more information)
+			ErrorCode:
+				The error code/success of the request (see “Error Codes” section for more information)
+		This callback function will run in the context of the created jQuery.ajax object (this.AjaxObj)
+	3) Options [Optional]
+		An object containing overwritable options
+		The members of this object will directly be combined with this DWCFRequest object
+		The optional members:
+			Name
+				Default: null
+				The name for the request (See “Request Names”)
+			URL
+				Default: The current URL without the query portion (document.location.origin+document.location.pathname)
+				The URL request calls are made to
+				You may instead want to set this to document.location.href to also include the query portion of the current URL
+			ExecuteCompleteFuncOnError
+				Default: true
+				Whether or not to call the CompleteFunc() function if an error occurs during the request
+					The CompleteFunc() function will still be called on an ErrorCodes.ResultNotSuccessful error
+				This is primarily to let the caller clean up from the action before canceling the result processing
+			ExecuteCompleteFuncOnRequestIgnored
+				Default: true
+				Whether or not to call the CompleteFunc() function if a request is ignored due to its name already being used by another request (see “Request Names”)
+				This is primarily to let the caller clean up from the action before canceling the result processing
+			HandleError
+				Default: A function which informs(alerts) the user of the error
+				The function to call when an error occurs
+				This should generally only be set in DWCFRequest.prototype.HandleError
+			ReturnErrorOnNonSuccessfulResult
+				Default: true
+				If enabled, returns ErrorCodes.ResultNotSuccessful if the “Result” member (required) returned from the server is not “Success”
+				This is not considered a real error and will therefore not cause HandleError() to be called or CompleteFunc() to not be called
+
+DWCFRequest class members:
+	Global [prototype] class members (all overwritable):
+		Defaults for base request optional variables:
+			Name, URL, ExecuteCompleteFuncOnError, ExecuteCompleteFuncOnRequestIgnored, HandleError, ReturnErrorOnNonSuccessfulResult
+			See the “Options” parameter of “DWCFRequest function parameters”
+		UseTextProcessing:
+			If enabled, uses text (not JSONP) processing
+			This is enabled only for blackberry by default
+		DO NOT OVERWRITE THE FOLLOWING MEMBERS:
+			RequestNames, ErrorCodes, AjaxError, RawHandleError, CallCompleteFunc
+	Individual class members:
+		Data
+			The object passed through the “Data” parameter of the DWCFRequest() function
+			This will receive an extra member “AJAX_SendTime” that contains a millisecond UNIX epoch timestamp
+		CompleteFunc
+			The callback function passed through the “CompleteFunc” parameter of the DWCFRequest() function
+		AjaxObj
+			The jQuery.ajax object used to make the request
+		All other members specified in the “Options” parameter of the DWCFRequest() function
+
+AJAX call information:
+	The server call is made through jQuery.ajax
+	The following options are set on the jQuery.ajax call:
+		cache
+			Value=false
+			Make sure caching does not occur
+		type
+			Value=POST
+			More compressed and reliable request variable data transfer
+			Also helps make sure caching does not occur
+		data
+			The object members from the “Data” parameter of the DWCFRequest() function, which is sent to the server as POST request variables
+			This will receive an extra member “AJAX_SendTime” that contains a millisecond UNIX epoch timestamp to make sure caching does not occur
+		dataType
+			If “UseTextProcessing” then the value is “text”, otherwise “jsonp”
+			If “UseTextProcessing”, then the return from the server will be in JSON (not JSONP) and should be returned with a HTTP header Content-Type of “application/json”
+			If NOT “UseTextProcessing”, then the return from the server should be the JSON return data wrapped in the function provided by the “callback” request variable (in other words, JSONP) with a HTTP header Content-Type of “application/javascript”
+				However, this will only occur if the “callback” request variable is provided
+		error and complete:
+			Used internally
+
+Request Names:
+	The DWCF class keeps track of currently processing requests, via names provided to the DWCFRequest() function, to make sure two requests of the same name do not run at once
+	The name of a request is provided as the “Name” member in the “Options” parameter of the DWCFRequest() function
+	If the request’s name is null, this functionality will be ignored for that request
+
+Error Codes:
+	This enum (DWCFRequest.ErrorCodes) is used for the “ErrorCode” parameters for the CompleteFunc() and HandleError() functions
+	When CompleteFunc() is called, its “Data” parameter is the returned object from the server unless otherwise specified in this section
+	Members:
+		Success
+			Value=0
+			Request was successful
+			This is guaranteed to always be 0 for conditional checking purposes
+		ErrorReceiving
+			Value=1
+			Error receiving a response from the server
+			CompleteFunc.Data=null
+		InvalidResponse
+			Value=2
+			Invalid response received from the server (not JSON or JSONP)
+			CompleteFunc.Data contains the response text
+		ErrorDecoding
+			Value=3
+			Error decoding or invalid JSON
+			CompleteFunc.Data is the response text when this.UseTextProcessing is turned on
+			This can occur if the returned result from the server is not an object containing the “Result” member
+		ResultNotSuccessful
+			Value=4
+			If the “Result” member (required) returned from the server is not “Success”
+			This will only be used if ErrorCodes.ReturnErrorOnNonSuccessfulResult is turned on
+			This is not considered a real error and will therefore not cause HandleError() to be called or CompleteFunc() to not be called
+		RequestIgnored
+			Value=5
+			If the request is ignored due to its name already being used by another request (see “Request Names”)
+			CompleteFunc.Data=null
+			This will only be used if ErrorCodes.ExecuteCompleteFuncOnRequestIgnored is turned on
+
+------------------------------Server (PHP) Class-----------------------------
+While the DWCF class greatly helps facilitate quick and easy communication via JSON, it is most importantly used for security by making sure all user input is properly sanitized and safe
+Request variables from $_REQUEST (or other such similar globals) should be retrieved through GetVars() and not directly read
+CallByAction() also helps to create physically separated action functions with guaranteed properly returned data
+All functions and members are currently static
+
+Functions:
+	RetMsg($DataObj)
+		Outputs $DataObj encoded as JSON and optionally wrapped in a JSONP function (if the “callback” request variable is supplied), and then exits
+		“callback” must be an alphanumeric+underscore string of 1 to 100 characters (XSS precaution)
+		This is used to quickly output a return and exit without any more processing
+		If using the DWCF Javascript module, $DataObj must be an object that contains a “Result” member
+	RetStr($StrMessage)
+		Calls RetMsg() with an object that only contains the “Result” member set to $StrMessage
+		This is mainly used to quickly output errors
+	CallByAction()
+		Calls an action processing function determined by the “Action” request variable
+		The called function is named “Action_” followed by the “Action” request variable
+		After initial script preprocessing, this function should be the only function called to process different requested actions
+		This function will end the script after processing
+		If a string/scalar [non-object] is returned from the action function, it will be output via RetStr()
+			This makes returning error messages simple by just returning a string from the function
+		Otherwise, outputs via RetMsg() the returned (non-string) object from the called action function with the added member 'Result'=>'Success' (if “Result” is not already specified)
+		$_COOKIE is merged into $_REQUEST (duplicate $_REQUEST members take precedence) as cookies are not included by default on newer PHP versions
+	GetVars($VarArray, $GetFrom=null)
+		Pulls in, checks, and returns variables (found as members in $GetFrom)
+		Each requested variable is given individual constraints, and if any fail, an error will be generated for that variable
+		If all variables succeed against their constraints, an object is returned with all the requested variables (variable name’s as the member keys)
+		If any errors occur, a GetVarsException is thrown (which contains an array with error information)
+		Parameters:
+			VarArray [Required]
+				This is an object with the variable’s names as the member’s keys, and the value as an object of constraints
+				The optional constraints are as follows:
+					IsOptional: If this option is not set, the checked variable must be set and not null. Otherwise, if the checked variable is not set, the returned variable is set to null
+					RegEx: A regular expression to match against
+					MaxLen: The max (unicode) string length
+					MaxByteLen: The max (byte) string length
+					RegExOverrideErrorMessage: The error message that is used on a non-matching regular expression
+					IntRange: The [inclusive] range a number can be in. Array(Min, Max). All given variables/constraints are run through the “floor” function for comparison
+					FloatRange: The [inclusive] decimal range a number can be in. Array(Min, Max)
+					SQLLookup:
+						A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup)->FetchRow(0)!=0)
+						If SQLLookup is an array, then the first item is appended to the select part of the query, and the rest of the items are passed to the Query() function as additional parameters
+					AutomaticValidValues: An array of STRING values that, if a match occurs, make the variable considered to be valid before any other checks are processed
+					DoNotCheckEncoding: If given, do not confirm that the string is valid against the current unicode encoding
+				VarArray can also contain a member named “AutoVars” whose members are directly returned as variables. Variables set here can later be overwritten if checked for constraints
+				If a variable in VarArray has a value of null, the variable is considered to have no constraints
+				If a variable’s value is a boolean, it is checked against the strings “true” or “false”
+			GetFrom [Optional]
+				An object with the requested variables to check (as members)
+				If null (the default), $_REQUEST is used
+	GetVarsRS($VarArray, $GetFrom=null, $ReturnAllErrors=true)
+		Wrapper for GetVars which calls RetStr on error
+		Parameters:
+			VarArray [Required] and GetFrom [Optional]
+				Directly passed to the GetVars() function
+			ReturnAllErrors [Optional]
+				Default: true
+				If true, returns the entire GetVarsException’s exception message
+				If false, Only returns the ErrorString from the first error
+	ErrorCodeName(ErrorCode)
+		Returns the member’s name from the “ErrorCodes” enum that matches the given integral value
+		If the error code integer is not found, “Unknown” is returned
+
+Members:
+	OutputCharset
+		Default: utf-8
+		This is used as the “charset” in the response HTTP header’s “Content-Type”
+		
+GetVarsException Exception:
+	This is generated by the GetVars() function
+	Contains an “Errors” member, which is an array of “ErrorItems” generated by failed constraint checks of the different requested variables in the GetVars() function
+	
+	ErrorItems:
+		Format:
+			Array(
+				VariableName:   The failed variable name
+				Constraints:    The passed constraints for the failed variable
+				ErrorString:    The generated error string
+				ConstraintName: The name of the constraint that failed (ex. “IntRange”). This can also be “NotScalar”, “NotSet”, and “Encoding”
+			)
+		A ConstraintName of “Invalid_Parameters” is set if GetVar()’s “VarArray” or “GetFrom” parameters do not evaluate to valid [associative] arrays. In this case, the “VariableName” and “Constraints” members are empty
+		
+	Exception Message:
+		A new-line delimited string of each item’s “ErrorItems.ErrorString” inside the “Errors” member
+
+-----------------------------Single File Example-----------------------------
+<?
+//If requested, run the action
+if(isset($_REQUEST['Action']))
+{
+	require_once('DWCF.php');
+	DWCF::CallByAction(); //Actions are executed by function name
+}
+function Action_TestAction() //Action=“TestAction” from the client
+{
+	//Extract requested variables
+	extract(DWCF::GetVarsRS(Array(
+		'Value'=>Array(
+			'RegEx'=>'/^\d+$/', //Must match a number
+			'RegExOverrideErrorMessage'=>'"Value" must be a number', //Let the user know the proper format for the variable
+			'IntRange'=>Array(20, 25) //Must be between 20 and 25, or an error is automatically returned
+		),
+		'AppendText'=>null //No constraints (except that it is a properly encoded string)
+	)));
+
+	//This shows an example of returning an error string (this could have also been taken care of by a regular expression in GetVars)
+	if($AppendText=='42')
+		return 'I told you not to do that';
+
+	return Array( //Since an array [object] is returned, this is considered successful
+		'BoxNum'=>'5', //The box number on the user’s side to output the data
+
+		//The output to show the user
+		//Only AppendText needs to be escaped, as Value is already confirmed as a valid number (and converted to a number, anyways)
+		'RetText'=>'Value plus 100 is '.($Value+100).'; <b>'.htmlspecialchars($AppendText, ENT_QUOTES, 'UTF-8').'</b>'
+	);
+}
+function Action_AnotherAction() { } //Another action name (unused)
+
+//Show the client form
+header('Content-Type: text/html; charset=utf-8');
+?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html><head>
+	<title>DWCF Example</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+	<script type="text/javascript" src="DWCF.js"></script>
+</head><body>
+
+<script type="text/javascript">
+function ExecuteRequest()
+{
+	//Update form state (note, these are all ran before we know if the request is a duplicate or not, which is not always a good idea)
+	$('span').text(''); //Clear out the text of all result spans
+	$('#SendButton').attr('disabled', true); //Disable the submit button
+	$('#State').text('Sending to server'); //Let the user know the request is processing
+
+	//Send the request
+	var RunQuery=new DWCFRequest({
+			Action:'TestAction', //Action to run on the PHP file
+			Value:$('#SendValue').val(), //“Value” variable via the text box to pass the PHP file
+			AppendText:$('#SendAppendText').val() //Another example variable
+		}, function(Data, ErrorCode) { //The function to run on completion
+			//Update the form state
+			$('#State').text('Complete'); //Let the user know the query has finished
+			$('#SendButton').attr('disabled', false); //Reenable submit button
+			$('#ErrorCode').text(this.ErrorCodeName(ErrorCode)); //Let the user know the success/error of the result
+
+			//If there was an error...
+			if(ErrorCode)
+			{
+				if(ErrorCode==this.ErrorCodes.ResultNotSuccessful) //If a not-successful error, let the user know what the error is
+					$('#ErrorCode').text(function(Dummy, Val) { return Val+': '+Data.Result });
+				return; //All errors handled so exit prematurely (other [catastrophic] errors handled by HandleError)
+			}
+
+			//Output the returned data string to the user in the appropriate output element
+			$('#UserBox'+Data.BoxNum).html(Data.RetText); //If using .html(), make sure all data is properly escaped first!
+		}, {Name:'TestQuery'}); //The name of the query is “TestQuery”. 2 queries with this name cannot be run at once
+}
+
+//Hook the form to perform the ExecuteRequest on submission
+$(document).ready(function() {
+	$('form').submit(function(e) {
+		e.preventDefault(); //Stop form submission
+		try { ExecuteRequest(); } catch(e) {} //Catch all errors to make sure this form completes successfully (so the form stops submission)
+	});
+});
+</script>
+<form action="#"> <!-- Pressing enter on text boxes also submits the form, which can demonstrate the “Request Name” functionality -->
+	<table border=1 cellspacing=0 cellpadding=2>
+		<tr><td>Value (20-25)</td><td><input type=text id=SendValue value=21></td></tr>
+		<tr><td>Append Text</td><td><input type=text id=SendAppendText value="Do not set this to 42"></td></tr>
+		<tr><td>Message</td><td><span id=UserBox5></span></td></tr>
+		<tr><td>Error Code</td><td><span id=ErrorCode></span></td></tr>
+		<tr><td>State</td><td><span id=State></span></td></tr>
+	</table><br>
+	<input type=submit value=Send id=SendButton>
+</form>
+
+</body></html>
