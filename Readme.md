@@ -1,4 +1,3 @@
-Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information.<br>
 Dakusan’s Web Communication Framework (DWCF) - v1.0 http://www.castledragmire.com/Projects/DWCF
 
 **A communication framework between the client and server sides of a website with an emphasis on security.**
@@ -345,3 +344,5 @@ $(document).ready(function() {
 
 </body></html>
 ```
+
+Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information.
