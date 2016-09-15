@@ -1,6 +1,6 @@
 <?php
 /***Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information. ***/
-/***Dakusan’s Web Communication Framework (DWCF) - v1.0 http://www.castledragmire.com/Projects/DWCF ***/
+/***Dakusan’s Web Communication Framework (DWCF) - v1.1 http://www.castledragmire.com/Projects/DWCF ***/
 
 /*
 While the DWCF class greatly helps facilitate quick and easy communication via JSON, it is most importantly used for security by making sure all user input is properly sanitized and safe
@@ -18,7 +18,7 @@ class DWCF
 	//If using the DWCF Javascript module, $DataObj must be an object that contains a “Result” member
 	public static function RetMsg($DataObj)
 	{
-		$DataObj=json_encode($DataObj);
+		$DataObj=json_encode($DataObj, @constant('JSON_UNESCAPED_UNICODE'));
 		if(!isset($_REQUEST['callback'])) //Return as json
 			return self::OutputHTMLMessage('application/json', $DataObj);
 		else if(!is_scalar($_REQUEST['callback']) || !preg_match('/^\w{1,100}$/D', $_REQUEST['callback'])) //Confirm valid callback name (XSS precaution)
@@ -45,7 +45,7 @@ class DWCF
 	{
 		//Check the requested action
 		if(!isset($_REQUEST['Action']) || !is_scalar($_REQUEST['Action']) || !function_exists("Action_$_REQUEST[Action]"))
-			self::RetStr('Invalid Action'.(isset($_REQUEST['Action']) ? ': '.json_encode($_REQUEST['Action']) : ''));
+			self::RetStr('Invalid Action'.(isset($_REQUEST['Action']) ? ': '.json_encode($_REQUEST['Action'], @constant('JSON_UNESCAPED_UNICODE')) : ''));
 
 		//Call the action function
 		$_REQUEST=array_merge($_COOKIE, $_REQUEST); //Make sure cookies are in the request data since it’s turned off by default on newer PHP versions
@@ -63,7 +63,7 @@ class DWCF
 		VarArray [Required]
 			This is an object with the variable’s names as the member’s keys, and the value as an object of constraints
 			The optional constraints are as follows:
-				IsOptional: If this option is not set, the checked variable must be set and not null. Otherwise, if the checked variable is not set, the returned variable is set to null
+				IsOptional: If this option is not set or is not (boolean)TRUE, the checked variable must be set and not null. Otherwise, if the checked variable is not set, the returned variable is set to null
 				RegEx: A regular expression to match against
 				MaxLen: The max (unicode) string length
 				MaxByteLen: The max (byte) string length
@@ -71,8 +71,10 @@ class DWCF
 				IntRange: The [inclusive] range a number can be in. Array(Min, Max). All given variables/constraints are run through the “floor” function for comparison
 				FloatRange: The [inclusive] decimal range a number can be in. Array(Min, Max)
 				SQLLookup:
-					A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup)->FetchRow(0)!=0)
+					A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup, ADDITIONAL_PARAMS)->FetchRow(0)!=0)
 					If SQLLookup is an array, then the first item is appended to the select part of the query, and the rest of the items are passed to the Query() function as additional parameters
+					%THEVAR% is replaced in parameters with the variable (can be part of a string)
+					If the first item is NULL, it will be removed, and the return will include full rows ("*") of the query result set in the format: Array('Value'=>$RESULT, 'QueryResult'=>Array(...))
 				AutomaticValidValues: An array of STRING values that, if a match occurs, make the variable considered to be valid before any other constraints are processed
 				DoNotCheckEncoding: If given, do not confirm that the string is valid against the current unicode encoding
 			VarArray can also contain a member named “AutoVars” whose members are directly returned as variables. Variables set here can later be overwritten if checked for constraints
@@ -105,7 +107,7 @@ class DWCF
 			//If variable is not found
 			if(!isset($GetFrom[$VarName]))
 			{
-				if(isset($IsOptional))
+				if(isset($IsOptional) && $IsOptional===true)
 					$Vars[$VarName]=null;
 				else
 					$Errors[]=$GVEI('Variable not provided: '.$VarName, 'NotSet');
@@ -126,6 +128,17 @@ class DWCF
 			else if(!is_string($V))
 				$V=(string)$V;
 
+			//Replace %THEVAR% with the variable
+			$ReplaceWithVar=function($Item) use ($V, &$ReplaceWithVar)
+			{
+				if(is_array($Item))
+					foreach($Item as &$SubItem)
+						$SubItem=$ReplaceWithVar($SubItem);
+				else if(is_string($Item) && strpos($Item, '%THEVAR%')!==FALSE)
+					return str_replace('%THEVAR%', $V, $Item);
+				return $Item;
+			};
+
 			//Other checks
 			if(!isset($DoNotCheckEncoding) && !mb_check_encoding($V))
 				$Errors[]=$GVEI('String is not encoded correctly: '.$VarName, 'Encoding');
@@ -145,11 +158,27 @@ class DWCF
 				(float)$OrigV<($FloatRange[0]=(float)$FloatRange[0]) ||
 				(float)$OrigV>($FloatRange[1]=(float)$FloatRange[1])))
 				$Errors[]=$GVEI("$VarName must be between $FloatRange[0] and $FloatRange[1]", 'FloatRange');
-			else if(isset($SQLLookup) && DSQL::Query(
-				'SELECT COUNT(*) FROM '.(is_array($SQLLookup) ? $SQLLookup[0] : $SQLLookup), //End of query part (string itself, or first parameter of an array)
-				is_array($SQLLookup) ? array_slice($SQLLookup, 1) : Array() //Parameters (if an array, everything past the first item in the array)
-				)->FetchRow(0)==0)
+			else if(isset($SQLLookup))
+			{
+				//See if the user wants the query return values along with the value
+				$DoRetVals=($SQLLookup[0]===NULL);
+				if($DoRetVals)
+					array_shift($SQLLookup);
+
+				//Get the return data
+				$RunFuncName=($DoRetVals ? 'FetchAll' : 'FetchNext');
+				$Ret=DSQL::Query(
+					'SELECT '.($DoRetVals ? '*' : 'COUNT(*)').' FROM '.(is_array($SQLLookup) ? $SQLLookup[0] : $SQLLookup), //End of query part (string itself, or first parameter of an array)
+					is_array($SQLLookup) ? array_map($ReplaceWithVar, array_slice($SQLLookup, 1)) : Array() //Parameters (if an array, everything past the first item in the array)
+				)->$RunFuncName();
+
+				//See if there is a match
+				if(($DoRetVals && !count($Ret)) || (!$DoRetVals && !$Ret))
 					$Errors[]=$GVEI("$VarName cannot be found", 'SQLLookup');
+
+				//Return the data
+				$Vars[$VarName]=($DoRetVals ? Array('Value'=>$OrigV, 'QueryResult'=>$Ret) : $OrigV);
+			}
 			else
 				$Vars[$VarName]=$OrigV;
 		}

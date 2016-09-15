@@ -1,5 +1,5 @@
 Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information.
-Dakusan’s Web Communication Framework (DWCF) - v1.0 http://www.castledragmire.com/Projects/DWCF
+Dakusan’s Web Communication Framework (DWCF) - v1.1 http://www.castledragmire.com/Projects/DWCF
 
 A communication framework between the client and server sides of a website with an emphasis on security.
 
@@ -180,7 +180,7 @@ Functions:
 			VarArray [Required]
 				This is an object with the variable’s names as the member’s keys, and the value as an object of constraints
 				The optional constraints are as follows:
-					IsOptional: If this option is not set, the checked variable must be set and not null. Otherwise, if the checked variable is not set, the returned variable is set to null
+					IsOptional: If this option is not set or is not (boolean)TRUE, the checked variable must be set and not null. Otherwise, if the checked variable is not set, the returned variable is set to null
 					RegEx: A regular expression to match against
 					MaxLen: The max (unicode) string length
 					MaxByteLen: The max (byte) string length
@@ -188,8 +188,10 @@ Functions:
 					IntRange: The [inclusive] range a number can be in. Array(Min, Max). All given variables/constraints are run through the “floor” function for comparison
 					FloatRange: The [inclusive] decimal range a number can be in. Array(Min, Max)
 					SQLLookup:
-						A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup)->FetchRow(0)!=0)
+						A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup, ADDITIONAL_PARAMS)->FetchRow(0)!=0)
 						If SQLLookup is an array, then the first item is appended to the select part of the query, and the rest of the items are passed to the Query() function as additional parameters
+						%THEVAR% is replaced in parameters with the variable (can be part of a string)
+						If the first item is NULL, it will be removed, and the return will include full rows ("*") of the query result set in the format: Array('Value'=>$RESULT, 'QueryResult'=>Array(...))
 					AutomaticValidValues: An array of STRING values that, if a match occurs, make the variable considered to be valid before any other checks are processed
 					DoNotCheckEncoding: If given, do not confirm that the string is valid against the current unicode encoding
 				VarArray can also contain a member named “AutoVars” whose members are directly returned as variables. Variables set here can later be overwritten if checked for constraints
