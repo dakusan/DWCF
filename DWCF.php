@@ -1,6 +1,6 @@
 <?php
 /***Copyright and coded by Dakusan - See http://www.castledragmire.com/Copyright for more information. ***/
-/***Dakusan’s Web Communication Framework (DWCF) - v1.1 http://www.castledragmire.com/Projects/DWCF ***/
+/***Dakusan’s Web Communication Framework (DWCF) - v1.1.1 http://www.castledragmire.com/Projects/DWCF ***/
 
 /*
 While the DWCF class greatly helps facilitate quick and easy communication via JSON, it is most importantly used for security by making sure all user input is properly sanitized and safe
@@ -73,7 +73,9 @@ class DWCF
 				SQLLookup:
 					A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup, ADDITIONAL_PARAMS)->FetchRow(0)!=0)
 					If SQLLookup is an array, then the first item is appended to the select part of the query, and the rest of the items are passed to the Query() function as additional parameters
-					%THEVAR% is replaced in parameters with the variable (can be part of a string)
+					%THEVAR% is replaced in parameters with the current variable’s value (can be part of a string)
+					%THEVAR-$VARNAME% acts the same as %THEVAR%, but takes its value from a variable already processed by GetVars named $VARNAME
+						Example: “%THEVAR-FooBar%” Will return the variable named “FooBar” which was already processed in the current GetVars run
 					If the first item is NULL, it will be removed, and the return will include full rows ("*") of the query result set in the format: Array('Value'=>$RESULT, 'QueryResult'=>Array(...))
 				AutomaticValidValues: An array of STRING values that, if a match occurs, make the variable considered to be valid before any other constraints are processed
 				DoNotCheckEncoding: If given, do not confirm that the string is valid against the current unicode encoding
@@ -128,15 +130,34 @@ class DWCF
 			else if(!is_string($V))
 				$V=(string)$V;
 
-			//Replace %THEVAR% with the variable
-			$ReplaceWithVar=function($Item) use ($V, &$ReplaceWithVar)
+			//Replace %THEVAR% and %THEVAR-$VARNAME% with the appropriate variable
+			$ReplaceWithVar=function($Item) use (&$ReplaceWithVar, &$Errors, $V, $Vars, $GVEI)
 			{
+				//Recurse on arrays
 				if(is_array($Item))
+				{
 					foreach($Item as &$SubItem)
 						$SubItem=$ReplaceWithVar($SubItem);
-				else if(is_string($Item) && strpos($Item, '%THEVAR%')!==FALSE)
-					return str_replace('%THEVAR%', $V, $Item);
-				return $Item;
+					unset($SubItem);
+					return $Item;
+				}
+
+				//If there is no varname to replace, exit here
+				if(!is_string($Item) || !preg_match_all('/%THEVAR(?:-([A-Za-z0-9_]+))?%/', $Item, $Matches))
+					return $Item;
+
+				//Get the values for all of the requested variables
+				$ReplaceVarList=Array();
+				foreach(array_unique($Matches[1]) as $VarName)
+					if(!strlen($VarName)) 
+						$ReplaceVarList['%THEVAR%']=$V;
+					else if(!isset($Vars[$VarName]))
+						$Errors[]=$GVEI('Invalid variable lookup name: '.$VarName, 'SQLLookup');
+					else
+						$ReplaceVarList["%THEVAR-$VarName%"]=$Vars[$VarName];
+
+				//Replace the variables with their values and return
+				return strtr($Item, $ReplaceVarList);
 			};
 
 			//Other checks
@@ -167,13 +188,14 @@ class DWCF
 
 				//Get the return data
 				$RunFuncName=($DoRetVals ? 'FetchAll' : 'FetchNext');
+				$StartErrorsCount=count($Errors);
 				$Ret=DSQL::Query(
 					'SELECT '.($DoRetVals ? '*' : 'COUNT(*)').' FROM '.(is_array($SQLLookup) ? $SQLLookup[0] : $SQLLookup), //End of query part (string itself, or first parameter of an array)
 					is_array($SQLLookup) ? array_map($ReplaceWithVar, array_slice($SQLLookup, 1)) : Array() //Parameters (if an array, everything past the first item in the array)
 				)->$RunFuncName();
 
 				//See if there is a match
-				if(($DoRetVals && !count($Ret)) || (!$DoRetVals && !$Ret))
+				if(count($Errors)!=$StartErrorsCount || ($DoRetVals && !count($Ret)) || (!$DoRetVals && !$Ret))
 					$Errors[]=$GVEI("$VarName cannot be found", 'SQLLookup');
 
 				//Return the data

@@ -1,4 +1,4 @@
-Dakusan’s Web Communication Framework (DWCF) - v1.1 http://www.castledragmire.com/Projects/DWCF
+Dakusan’s Web Communication Framework (DWCF) - v1.1.1 http://www.castledragmire.com/Projects/DWCF
 
 **A communication framework between the client and server sides of a website with an emphasis on security.**
 
@@ -192,7 +192,9 @@ All functions and members are currently static
         * **SQLLookup**:
           * A query to confirm if a value is valid. This requires the DSQL library and confirms programmatically: `if(DSQL::Query('SELECT COUNT(*) FROM '.$SQLLookup, ADDITIONAL_PARAMS)->FetchRow(0)!=0)`
           * If SQLLookup is an array, then the first item is appended to the select part of the query, and the rest of the items are passed to the Query() function as additional parameters
-          * **%THEVAR%** is replaced in parameters with the variable (can be part of a string)
+          * **%THEVAR%** is replaced in parameters with the current variable’s value (can be part of a string)
+          * **%THEVAR-$VARNAME%** acts the same as **%THEVAR%**, but takes its value from a variable already processed by GetVars named **$VARNAME**
+            * Example: “%THEVAR-FooBar%” Will return the variable named “FooBar” which was already processed in the current GetVars run
           * If the first item is *NULL*, it will be removed, and the return will include full rows ("*") of the query result set in the format: `Array('Value'=>$RESULT, 'QueryResult'=>Array(...))`
         * **AutomaticValidValues**: An array of **STRING** values that, if a match occurs, make the variable considered to be valid before any other checks are processed
         * **DoNotCheckEncoding**: If given, do not confirm that the string is valid against the current unicode encoding
